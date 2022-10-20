@@ -1,0 +1,426 @@
+
+# PROGRAMA FINAL
+                         ####   Maria Teresa López Cascales   ####
+                         ####          48548901H              ####
+
+# Master Bioinformática 2013-2014
+			 ####	   Trabajo Fin de Máster      ####
+	
+# Directores: 	Faustino Marín San Leandro 
+#		Jesualdo Tomás Fernández-Breis
+
+###################################################################################################
+
+#$|=1;
+#!/usr/bin/perl -w 
+use strict; 
+use Statistics::R ;  # to run the Perl-R interface, using CPAN
+use Storable; 
+use Data::Dumper;
+use LWP::Simple;
+use List::Util qw(sum);
+#use XML::TreePP;
+
+print "\n";
+print "Introduce the 'GO term' (without '') from the list and pulse enter:
+	1. 'axon guidance'
+	2. 'axonogenesis'
+	3. 'regulation of neuron death'
+	4. 'cerebral cortex radially oriented cell migration'
+	5. 'glial cell development'
+	6. 'RNA biosynthetic process'
+	7. 'protein binding'
+	8. 'neurological system process'
+        9. 'transcription factor binding'
+	\n\n";
+
+
+my $mi_termino_GO_en_Perl=<STDIN>; # I introduce the GO term from which I want to get the list of genes.
+chomp $mi_termino_GO_en_Perl; # avoid \n on last field
+	 
+	my @genes=(); 		# I declare a new variable
+	my $gene_counter=0; 	# I initialize the counter to zero, which will count the number of genes me having my gene list.
+	my $R = Statistics::R->new() ; 	# I declare the variable R, which is what makes calling R from Perl
+
+	$R->startR ; # start R 
+
+	$R->send (q` library ("biomaRt") `) ; 	# “send(q'..)”: I send those statements to run in R from Perl.
+	
+	$R ->set('mi_termino_GO', $mi_termino_GO_en_Perl); 
+			# “set”: sets the value to a variable. In this case I want the "GO term". 
+				#Then with this establishes the equivalence between the variable using R, and the variable that you obtain.
+
+	$R->send ( q ` mi_ensembl = useMart ("ensembl", dataset = "mmusculus_gene_ensembl")`); 
+
+	$R->send ( q ` tabla = getBM (attributes = "external_gene_name", filters ="go_parent_name" , values = mi_termino_GO, mart = mi_ensembl)`);
+
+
+		# you say to the variable where you want to put the result, and the orders you give BioMart: attributes, filters and 				values.			
+			#$query->setDataset("mmusculus_gene_ensembl");
+			#$query->addFilter("go_parent_name", ["mi_termino_GO_en_Perl"]);
+			#$query->addFilter("biotype", ["protein_coding"]);
+			#$query->addAttribute("external_gene_id");
+			
+			
+	my $length = $R -> get ('nrow (tabla) '); # To get the rows in a table in R: "nrow"
+
+	for (my$i=1; $i<=$length;$i++){ # We're running the length of the vector
+		$R -> set('x', $i); 	
+			# equivalence between the variable using R 'x', and my variable result $i
+		my $name = $R->get ('tabla[x,1]'); #Getting results. He sees it as an array. From many rows as there are genes,
+							# but in a single column.
+		
+		#unless (($genes[$i])=~/$name/){ # this is to avoid repeated genes.
+		#	$gene_counter++; # we want all the names go adding.
+		#	$genes[$i]=$genes[$i]."\n".$name;} }
+		push (@genes,$name);} 
+		
+	
+	#$R->stopR() ; # finish R 
+	 
+	 
+	print "\n\n\n The gene list: \n", @genes, "\n\n"; 
+	print " The number of genes from the list is: ", $length, "\n\n"; 
+	print " The number of 'different' genes from the list is: ", $gene_counter, "\n\n";
+	
+
+
+my $total_genes = (scalar(@genes)); 
+
+my @array_allen=(); # We initiated an array of structures where the listings for each gene locus will be included. 
+my @seleccionados =(); 
+my @nombres_seleccionados =(); 
+
+for (my $j = 0; $j < $total_genes ; $j++) { 
+	my $selected_struc=""; #To enter the list of names of structures for each gene $j. 
+	my $genelc = ucfirst lc $genes[$j]; #Had to lowercase to search in Allenbrain except the first letter. (This is the 			nomenclature of mouse to human would be a different, all uppercase nomenclature). 
+
+ 	print "my gene is: \n", $genelc;
+	my $allen_adress = "http://api.brain-map.org/api/v2/data/SectionDataSet/query.xml?criteria=products%5Bid\$eq1%5D,genes%5Bacronym\$eq%27$genelc%27%5D&include=genes,section_images"; #gene name: you must introduce these steps → changing '$genelc' by 'the name of the gene'; and here shows the list of experiments realized with this gene. With series of images.
+
+	my $allen_doc = get($allen_adress) || die "Failed connection to allenbrain.\n"; 
+	print "documento allendoc: ", $allen_doc; 
+	open (MYFILE, '>data.txt');
+	print MYFILE $allen_doc;
+ 	close (MYFILE);
+	
+	rename "data.txt", "gen_$genelc";
+
+	#######################################
+	#my $tpp = XML::TreePP->new(); 
+	#my $allen_doc = $tpp->parsefile($allen_doc_xml);
+	my $allen_doc_txt="";
+	open (FILE2, "gen_$genelc");
+	while (<FILE2>) {
+	chomp$_;
+	$allen_doc_txt.=$_;
+	}
+	#print$allen_doc_txt;	
+
+	if ($allen_doc_txt=~/image_series_/) {
+		#my @todos = ();	
+		while ($allen_doc_txt=~/<id>(.*?)<\/id>/) {
+			
+			my ($allen_exp) = $allen_doc_txt =~ /<id>(.*?)<\/id>/;
+			#push (@todos, $allen_exp);
+			#print "mi allen_doc es =", $allen_doc, "\n";
+
+			my ($texto_con_numero_de_plano) = $allen_doc_txt =~ /$allen_exp(.*?)<\/plane/;
+			my ($experimento_valido) = $allen_doc_txt =~ /<failed>(.*?)$allen_exp/;
+
+		
+	# Si experimento_valido es igual a: plano= 1 o failed=true, hay que pasar al siguiente. 
+	# Entonces borramos este experimento para asi seguir en el bucle.
+
+			if (($texto_con_numero_de_plano =~ /2/) and ($experimento_valido =~ /false/)){
+				push (@seleccionados, $allen_exp);
+				push(@nombres_seleccionados, $genelc); 	
+				($allen_doc_txt)=~s/<id>(.*?)<\/id>//g;
+				}
+			else {
+				($allen_doc_txt)=~s/<id>(.*?)<\/id>//;
+				($allen_doc_txt)=~s/<\/plane// ; 
+				($allen_doc_txt)=~s/<failed>// ;
+				}
+		}
+		#print "id's todos:  \n\n", @todos, "\n\n";
+	}
+}
+print "id's seleccionados ok:  \n\n", join (", ", @seleccionados), "\n\n";
+
+
+
+# Abrimos nuevo bucle para recorrer el array seleccionados.
+
+for (my $i=0; $i < scalar(@seleccionados); $i++) {
+	my $allen_adress2 = "http://api.brain-map.org/api/v2/data/SectionDataSet/query.xml?id=$seleccionados[$i]&include=structure_unionizes%28structure%29";
+	my $allen_doc2 = get($allen_adress2) || die "Failed connection2 to allenbrain.\n";
+	open (MYFILE3, '>data2.txt');
+	print MYFILE3 $allen_doc2;
+ 	close (MYFILE3);
+	
+	rename "data2.txt", "allen_$nombres_seleccionados[$i]_$seleccionados[$i]";
+	} 
+
+
+#Obtenemos la lista completa de acronimos de la ontologia 1.json:
+my$contenido;
+open MYFILE4, "<", 'jsonn.txt' or die;
+while (<MYFILE4>) {
+	$contenido.=$_;}
+close (MYFILE4);
+
+# GETTING THE ARRAY OF STRUCTURES WITHOUT CHILDREN (IN A .json FILE): "children : []"
+
+my $json_txt ="";
+my @no_children_structure =(); 
+
+open (FILE, '<jsonn.txt') or die "Cannot open file: $!";
+while (<FILE>) {
+	#print $_
+	chomp$_;
+	$json_txt.=$_;
+	}
+
+#print $json_txt;
+
+while ($json_txt=~ /"na(.*?){/) {
+        	my ($subtext) = $json_txt =~ /"na(.*?){/;
+                            #print " subtexto", $subtext; 
+                      if ($subtext =~ /\[]/) {
+                      my ($valido) = $subtext =~ /me": "(.*?)",/;
+                       #print "valido:", $valido; 
+                       push(@no_children_structure, $valido);
+                       
+                       }
+                      $json_txt =~ s/"na(.*?){//;
+                            
+                      
+                 }       
+        #print " el array de individuos sin hijos es: \n ",join(" ", @no_children_structure);
+       
+        #print " numero total: \n", scalar(@seleccion);
+
+open my $nochildren, '>', "onto1_nochildren" or die "Cannot open structures: $!";
+
+# Loop over the array
+foreach (@no_children_structure)
+	{
+    print $nochildren "$_\n"; # Print each entry in our array to the file
+}
+close $nochildren;
+
+
+# GETTING THE ARRAY OF STRUCTURES WITHOUT CHILDREN (IN A .json FILE): "children : []"
+
+my $json_txt ="";
+my @no_children_structure =(); 
+
+my $file = 'onto1_nochildren';
+open (MYFILE5, 'onto1_nochildren');
+
+while (<MYFILE5>) {
+ 	chomp;
+ 	push (@no_children_structure,$_);
+ }
+ close (MYFILE5);
+
+my @nombres;
+
+	my $path= "."; # You have to put the path where yo have the script.	
+	opendir(my $directorio, $path) || die;
+	@nombres = grep { /^allen_(.*?)/ } readdir($directorio);
+	closedir $directorio;
+
+for (my $i = 0; $i < scalar(@nombres) ; $i++) {
+	my @vem_array = ();
+	my @allen_acronym = ();
+	my @vem_array_validos = ();
+	my $allen_exp_expression_txt="";
+	my @allen_structure_validos = ();
+        my @tabla_structures_values=();
+
+	open (FILE6, $nombres[$i]);
+	while (<FILE6>) {	
+		chomp$_;
+		$allen_exp_expression_txt.=$_; # from here we will draw the names of 2 arrays of 'structures' and 'values'
+		}
+	close FILE6;
+
+my@lista_ontologia_acronimos=();
+my$ontologia_acronimo="";
+while ($contenido=~/acronym/){
+	($ontologia_acronimo) = $contenido=~/acronym":\ "(.*?)",/;
+	($contenido)=~ s/acronym//;
+	push(@lista_ontologia_acronimos,$ontologia_acronimo);}
+
+
+
+
+	#Borramos la parte del documento allen referente a la segunda ontologia:
+	$allen_exp_expression_txt=~s/<ontology-id type="integer">12(.*?)$//;
+
+	while ($allen_exp_expression_txt=~/<acronym>/){ 
+		
+		unless ($allen_exp_expression_txt!~/<acronym>/) { 
+			(my $allen_struct) = $allen_exp_expression_txt =~ /<acronym>(.*?)</; 
+			$allen_exp_expression_txt =~ s/<acronym>//;
+			push(@allen_acronym,$allen_struct);
+				
+			unless ($allen_exp_expression_txt!~/voxel-energy-mean/){ # vem = voxel-energy-mean
+				(my $vem) = $allen_exp_expression_txt =~ /voxel-energy-mean type="float">(.*?)</; 
+				$allen_exp_expression_txt =~ s/voxel-energy-mean type="float"//;
+				push(@vem_array,$vem);
+				$allen_exp_expression_txt =~ s/<structure-unionize>(.*?)>1<//;
+			}	
+		}
+	}
+	
+	my$tabla;#en esta tabla añadimos TODOS los acronimos de la ontologia original
+		#Para cada acronimo de la ontologia, si aparece en el docuemnto allen añadimos a esa tabla su valor respectivo; y si no, le añadimos "NA":
+	
+	for (my$j=0;$j<scalar(@lista_ontologia_acronimos);$j++){
+		$tabla.=$lista_ontologia_acronimos[$j]."\t";
+		my$counter="NO";
+
+		for (my$k=0;$k<scalar(@allen_acronym);$k++){
+			if ($lista_ontologia_acronimos[$j]eq$allen_acronym[$k]){	
+				$counter="SI";
+				$tabla.=$vem_array[$k]."\n";
+				last;}}
+
+		if($counter eq "NO"){$tabla.="sindatos\n";}		
+							}		
+	$nombres[$i]=~s/allen/table/; #cambio en el titulo del nuevo documento
+	#open MIFILE7, ">", $nombres[$i].$plano.'.tsv' or die $!;
+	open MIFILE7, ">", $nombres[$i].'.tsv' or die $!;
+	print MIFILE7 $tabla;
+	close MIFILE7}
+
+# ejecutar el programa de R 
+
+	$R->stopR() ; # finish R
+
+
+use strict;
+use List::Util;
+use Image::Magick;
+
+#Leemos la tabla de acronimos con sus numeros de cluster respectivos:
+print "Introduce name of file with kmeans result:\n";
+my$kmeansfile = <>;
+chomp$kmeansfile;
+
+my$tabla="";
+open(MIFILE, "<", $kmeansfile) or die;
+while (<MIFILE>){
+    $tabla.=$_;
+}
+close MIFILE;
+$tabla="\n".$tabla."\n";
+my@acronimos=();
+my@cluster_numbers=();
+while ($tabla=~/;/){
+     (my$acronym)=$tabla=~/\n"(.*?)";/;
+     $acronym=~s/\//-/;#Hay que quitar los "backlashes"; los cambiamos por un guion.
+     push(@acronimos,$acronym);
+	(my$cluster)=$tabla=~/;(.*?)\n/;
+     push(@cluster_numbers,$cluster);
+	$tabla=~s/\n//;
+	$tabla=~s/;//;}
+my%hash;
+for (my$i=0;$i<scalar(@acronimos);$i++){
+    $hash{$acronimos[$i]} = $cluster_numbers[$i];
+}
+
+###############
+
+
+#El numero de kmeans equivale al numero de elementos distintos de este array:
+my %counts;
+$counts{$_}++ for @cluster_numbers;
+my $kmeans=scalar(keys %counts);
+######################################################
+
+
+#Extraemos la lista de dibujos de estructuras, nombradas segun el acrónimo):
+my $ruta= "./dibujos_imagemagick/dibujos_de_estructuras/";
+opendir(my $dir, $ruta) || die;
+my @dibujos = grep { /^[A-z](.*?).gif/ } readdir($dir); 
+closedir $dir;
+################################
+
+
+#Hacemos una lista de colores:
+my@miscolores=qw(
+Red
+Green
+Blue
+Yellow
+Brown
+Orange
+DarkBlue		
+LightBlue
+Olive
+Cyan
+Silver	
+Purple
+Maroon	
+Lime
+Magenta);#El script asi admite hasta 15 kmeans
+
+
+#################3
+
+#Vamos abriendo el dibujo de cada estructura; y segun su numero de cluster asignado en el hash, le damos un color: 
+for (my $i = 0; $i < scalar(@dibujos) ; $i++) {
+    my $image = Image::Magick->new;
+    $image->Read("./dibujos_de_estructuras/".$dibujos[$i]);
+    $dibujos[$i]=~s/.gif//;
+
+    ####Lo siguiente serviria como control si no funciona la ejecucion:
+	    #print "Estructura=",$dibujos[$i]," Kmeans=",$hash{$dibujos[$i]},"\n";
+	    #print "Press Enter...";
+	    #<STDIN>;  
+    
+      if (!$hash{$dibujos[$i]}) {
+	print"No se reconoce el acronimo ",$dibujos[$i],"\n";
+      }
+      else{
+	for (my$ii=0;$ii<$kmeans;$ii++){
+        if ($hash{$dibujos[$i]}eq $ii+1) {
+            my$color=$miscolores[$ii];    
+    	    $image->Opaque(fill => $color, color => 'black');#El color negro lo hemos cambiado por el color asignado
+            $image->Transparent(fill => 'transparent', color => 'white');#El background lo hemos hecho transparente
+            $image->Write("coloreado-".$dibujos[$i]."_temp");}
+}}}
+
+my $path2= ".";
+opendir(my $directorio2, $path2) || die;
+my @dibujos2 = grep { /coloreado-/ } readdir($directorio2); 
+closedir $directorio2;
+
+#Lo siguiente, como control de que este funcionando todo bien:
+if (scalar(@dibujos2)==0){
+	print "No hemos podido procesar dibujos.\n";
+	die;
+	}
+
+
+my$base;
+my$mask;
+$base = Image::Magick->new;
+	$base->Read($dibujos2[0]); #Tomamos como base este dibujo
+for (my $j = 1; $j < scalar(@dibujos2) ; $j++) {
+	
+	$mask = Image::Magick->new;
+	$mask->Read($dibujos2[$j]);
+	$base->Composite(image=>$mask,compose=>'Screen');
+	
+	unlink $dibujos2[$j]; } #Conforme los hemos usado, con 'unlink' los vamos borrando, para que no interfieran cuando ejecutemos de nuevo el script.
+
+unlink $dibujos2[0];#Borramos tambien el dibujo base con el que habiamos empezado.
+
+my$datestring = localtime();
+
+$base->Write($kmeans."_kmeans__".$datestring.".jpg");
