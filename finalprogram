@@ -50,9 +50,9 @@ chomp $mi_termino_GO_en_Perl; # avoid \n on last field
 			# “set”: sets the value to a variable. In this case I want the "GO term". 
 				#Then with this establishes the equivalence between the variable using R, and the variable that you obtain.
 
-	$R->send ( q ` mi_ensembl = useMart ("ensembl", dataset = "mmusculus_gene_ensembl")`); 
+	$R->send ( q ` mi_ensembl = useMart ('ENSEMBL_MART_ENSEMBL',dataset='mmusculus_gene_ensembl', host="may2012.archive.ensembl.org")`); 
 
-	$R->send ( q ` tabla = getBM (attributes = "external_gene_name", filters ="go_parent_name" , values = mi_termino_GO, mart = mi_ensembl)`);
+	$R->send ( q ` tabla = getBM (attributes = "external_gene_id", filters ="go_parent_name" , values = mi_termino_GO, mart = mi_ensembl)`);
 
 
 		# you say to the variable where you want to put the result, and the orders you give BioMart: attributes, filters and 				values.			
@@ -127,12 +127,13 @@ for (my $j = 0; $j < $total_genes ; $j++) {
 
 			my ($texto_con_numero_de_plano) = $allen_doc_txt =~ /$allen_exp(.*?)<\/plane/;
 			my ($experimento_valido) = $allen_doc_txt =~ /<failed>(.*?)$allen_exp/;
+			my ($ontologia) = $allen_doc_txt =~ /$allen_exp(.*?)\/ontology-id>/;
 
 		
 	# Si experimento_valido es igual a: plano= 1 o failed=true, hay que pasar al siguiente. 
 	# Entonces borramos este experimento para asi seguir en el bucle.
 
-			if (($texto_con_numero_de_plano =~ /2/) and ($experimento_valido =~ /false/)){
+			if (($texto_con_numero_de_plano =~ /2/) and ($experimento_valido =~ /false/) and ($ontologia =~ /<ontology-id type="integer">1</)){
 				push (@seleccionados, $allen_exp);
 				push(@nombres_seleccionados, $genelc); 	
 				($allen_doc_txt)=~s/<id>(.*?)<\/id>//g;
@@ -141,6 +142,7 @@ for (my $j = 0; $j < $total_genes ; $j++) {
 				($allen_doc_txt)=~s/<id>(.*?)<\/id>//;
 				($allen_doc_txt)=~s/<\/plane// ; 
 				($allen_doc_txt)=~s/<failed>// ;
+				($allen_doc_txt)=~s/<ontology-id type="integer">12<//;	
 				}
 		}
 		#print "id's todos:  \n\n", @todos, "\n\n";
@@ -173,7 +175,7 @@ close (MYFILE4);
 # GETTING THE ARRAY OF STRUCTURES WITHOUT CHILDREN (IN A .json FILE): "children : []"
 
 my $json_txt ="";
-my @no_children_structure =(); 
+my @no_children_acronym =(); 
 
 open (FILE, '<jsonn.txt') or die "Cannot open file: $!";
 while (<FILE>) {
@@ -184,27 +186,27 @@ while (<FILE>) {
 
 #print $json_txt;
 
-while ($json_txt=~ /"na(.*?){/) {
-        	my ($subtext) = $json_txt =~ /"na(.*?){/;
+while ($json_txt=~ /"acron(.*?){/) {
+        	my ($subtext) = $json_txt =~ /"acron(.*?){/;
                             #print " subtexto", $subtext; 
                       if ($subtext =~ /\[]/) {
-                      my ($valido) = $subtext =~ /me": "(.*?)",/;
+                      my ($valido) = $subtext =~ /ym": "(.*?)",/;
                        #print "valido:", $valido; 
-                       push(@no_children_structure, $valido);
+                       push(@no_children_acronym, $valido);
                        
                        }
-                      $json_txt =~ s/"na(.*?){//;
+                      $json_txt =~ s/"acron(.*?){//;
                             
                       
                  }       
-        #print " el array de individuos sin hijos es: \n ",join(" ", @no_children_structure);
+        #print " el array de individuos sin hijos es: \n ",join(" ", @no_children_acronym);
        
         #print " numero total: \n", scalar(@seleccion);
 
 open my $nochildren, '>', "onto1_nochildren" or die "Cannot open structures: $!";
 
 # Loop over the array
-foreach (@no_children_structure)
+foreach (@no_children_acronym)
 	{
     print $nochildren "$_\n"; # Print each entry in our array to the file
 }
@@ -214,14 +216,14 @@ close $nochildren;
 # GETTING THE ARRAY OF STRUCTURES WITHOUT CHILDREN (IN A .json FILE): "children : []"
 
 my $json_txt ="";
-my @no_children_structure =(); 
+my @no_children_acronym =(); 
 
 my $file = 'onto1_nochildren';
 open (MYFILE5, 'onto1_nochildren');
 
 while (<MYFILE5>) {
  	chomp;
- 	push (@no_children_structure,$_);
+ 	push (@no_children_acronym,$_);
  }
  close (MYFILE5);
 
@@ -237,7 +239,7 @@ for (my $i = 0; $i < scalar(@nombres) ; $i++) {
 	my @allen_acronym = ();
 	my @vem_array_validos = ();
 	my $allen_exp_expression_txt="";
-	my @allen_structure_validos = ();
+	my @allen_acronym_validos = ();
         my @tabla_structures_values=();
 
 	open (FILE6, $nombres[$i]);
@@ -247,18 +249,18 @@ for (my $i = 0; $i < scalar(@nombres) ; $i++) {
 		}
 	close FILE6;
 
-my@lista_ontologia_acronimos=();
-my$ontologia_acronimo="";
-while ($contenido=~/acronym/){
-	($ontologia_acronimo) = $contenido=~/acronym":\ "(.*?)",/;
-	($contenido)=~ s/acronym//;
-	push(@lista_ontologia_acronimos,$ontologia_acronimo);}
+#my@lista_ontologia_acronimos=();
+# my$ontologia_acronimo="";
+# while ($contenido=~/acronym/){
+# 	($ontologia_acronimo) = $contenido=~/acronym":\ "(.*?)",/;
+#	($contenido)=~ s/acronym//;
+#	push(@lista_ontologia_acronimos,$ontologia_acronimo);}
 
 
 
 
 	#Borramos la parte del documento allen referente a la segunda ontologia:
-	$allen_exp_expression_txt=~s/<ontology-id type="integer">12(.*?)$//;
+	#$allen_exp_expression_txt=~s/<ontology-id type="integer">12(.*?)$//;
 
 	while ($allen_exp_expression_txt=~/<acronym>/){ 
 		
@@ -276,15 +278,30 @@ while ($contenido=~/acronym/){
 		}
 	}
 	
+# Here we will put the selected values​​, which is on the list etructuras,
+		# while the corresponding values ​​are selected.
+
+	for (my $j =0; $j < scalar(@allen_acronym) ; $j++) {
+		for (my $i = 0; $i < scalar(@no_children_acronym) ; $i++){
+			if ($no_children_acronym[$i] eq $allen_acronym[$j]){
+				push (@allen_acronym_validos,$allen_acronym[$j]);
+				push (@vem_array_validos, $vem_array[$j]);
+				#print "posicion:", $j,"   " ,$allen_acronym[$j], "  ", $vem_array[$j], "\n";
+			}
+		}
+	}
+
+
+
 	my$tabla;#en esta tabla añadimos TODOS los acronimos de la ontologia original
 		#Para cada acronimo de la ontologia, si aparece en el docuemnto allen añadimos a esa tabla su valor respectivo; y si no, le añadimos "NA":
 	
-	for (my$j=0;$j<scalar(@lista_ontologia_acronimos);$j++){
-		$tabla.=$lista_ontologia_acronimos[$j]."\t";
+	for (my$j=0;$j<scalar(@no_children_acronym);$j++){
+		$tabla.=$no_children_acronym[$j]."\t";
 		my$counter="NO";
 
 		for (my$k=0;$k<scalar(@allen_acronym);$k++){
-			if ($lista_ontologia_acronimos[$j]eq$allen_acronym[$k]){	
+			if ($no_children_acronym[$j]eq$allen_acronym[$k]){	
 				$counter="SI";
 				$tabla.=$vem_array[$k]."\n";
 				last;}}
@@ -311,23 +328,23 @@ print "Introduce name of file with kmeans result:\n";
 my$kmeansfile = <>;
 chomp$kmeansfile;
 
-my$tabla="";
+my$tabla_k="";
 open(MIFILE, "<", $kmeansfile) or die;
 while (<MIFILE>){
-    $tabla.=$_;
+    $tabla_k.=$_;
 }
 close MIFILE;
-$tabla="\n".$tabla."\n";
+$tabla_k="\n".$tabla_k."\n";
 my@acronimos=();
 my@cluster_numbers=();
-while ($tabla=~/;/){
-     (my$acronym)=$tabla=~/\n"(.*?)";/;
+while ($tabla_k=~/;/){
+     (my$acronym)=$tabla_k=~/\n"(.*?)";/;
      $acronym=~s/\//-/;#Hay que quitar los "backlashes"; los cambiamos por un guion.
      push(@acronimos,$acronym);
-	(my$cluster)=$tabla=~/;(.*?)\n/;
+	(my$cluster)=$tabla_k=~/;(.*?)\n/;
      push(@cluster_numbers,$cluster);
-	$tabla=~s/\n//;
-	$tabla=~s/;//;}
+	$tabla_k=~s/\n//;
+	$tabla_k=~s/;//;}
 my%hash;
 for (my$i=0;$i<scalar(@acronimos);$i++){
     $hash{$acronimos[$i]} = $cluster_numbers[$i];
@@ -424,3 +441,4 @@ unlink $dibujos2[0];#Borramos tambien el dibujo base con el que habiamos empezad
 my$datestring = localtime();
 
 $base->Write($kmeans."_kmeans__".$datestring.".jpg");
+
